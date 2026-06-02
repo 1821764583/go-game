@@ -1,0 +1,12 @@
+[
+build
+]
+builder = "nixpacks"
+buildCommand = "cd packages/engine && npm install && npm run build && cd ../../apps/backend && npm install && npm run build"
+
+[
+deploy
+]
+startCommand = "node apps/backend/dist/main.js"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
