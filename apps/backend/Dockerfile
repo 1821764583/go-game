@@ -18,12 +18,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-COPY packages/engine/package*.json ./packages/engine/
-COPY apps/backend/package*.json ./apps/backend/
-
-RUN npm ci --omit=dev
-
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages/engine/dist ./packages/engine/dist
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 
