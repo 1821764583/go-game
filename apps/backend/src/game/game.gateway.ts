@@ -55,6 +55,16 @@ export class GameGateway implements OnGatewayDisconnect {
     const room = await this.roomService.bindCreator(data.code.toUpperCase(), client.id);
     client.join(data.code);
     this.emit(client.id, 'room_bound', { code: room.code, color: 1, boardSize: room.boardSize });
+
+    // 若对手已加入（页面跳转导致 socket 重建），补发 game_start
+    if (room.status === 'playing') {
+      this.emit(client.id, 'game_start', {
+        board: room.board,
+        currentTurn: room.currentTurn,
+        nicknames: room.nicknames,
+        boardSize: room.boardSize,
+      });
+    }
   }
 
   // ─── 2. 好友加入房间 ─────────────────────────────────────────

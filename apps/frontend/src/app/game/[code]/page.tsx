@@ -1,15 +1,23 @@
 'use client';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import GoBoard from '@/components/GoBoard';
 import MoveList from '@/components/MoveList';
 import { useGameStore } from '@/store/game-store';
-import { Board, BoardSize, Point, ScoreResult, GameResult, createEmptyBoard } from '@go-game/engine';
+import { Board, BoardSize, GameMove, Point, ScoreResult, GameResult, createEmptyBoard } from '@go-game/engine';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
 
 export default function GamePage() {
+  return (
+    <Suspense>
+      <GamePageInner />
+    </Suspense>
+  );
+}
+
+function GamePageInner() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -87,10 +95,20 @@ export default function GamePage() {
       setBoard(data.board);
       setCurrentTurn(data.currentTurn);
       setLastMove([data.lastMove.x, data.lastMove.y]);
+      const move: GameMove = {
+        moveNumber: data.moveNumber,
+        player: data.lastMove.player,
+        x: data.lastMove.x,
+        y: data.lastMove.y,
+        captured: data.captured,
+        timestamp: Date.now(),
+      };
+      setMoves([...useGameStore.getState().moves, move]);
     });
 
     // 对手 pass
     socket.on('player_passed', (data: { player: 1 | 2; passCount: number }) => {
+      setCurrentTurn(data.player === 1 ? 2 : 1);
       if (data.player !== useGameStore.getState().myColor) {
         setServerError(`对手停一手（连续 ${data.passCount} 次）`);
         setTimeout(() => setServerError(''), 3000);
