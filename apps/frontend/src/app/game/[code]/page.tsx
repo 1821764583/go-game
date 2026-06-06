@@ -5,7 +5,7 @@ import { io, Socket } from 'socket.io-client';
 import GoBoard from '@/components/GoBoard';
 import MoveList from '@/components/MoveList';
 import { useGameStore } from '@/store/game-store';
-import { Board, BoardSize, GameMove, Point, ScoreResult, GameResult, createEmptyBoard } from '@go-game/engine';
+import { Board, BoardSize, GameMove, Point, ScoreResult, GameResult, createEmptyBoard, estimateInfluence } from '@go-game/engine';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
 
@@ -28,6 +28,7 @@ function GamePageInner() {
   const socketRef = useRef<Socket | null>(null);
   const [serverError, setServerError] = useState('');
   const [showResult, setShowResult] = useState(false);
+  const [showInfluence, setShowInfluence] = useState(false);
 
   const {
     myColor, myNickname, opponentNickname, boardSize,
@@ -260,6 +261,7 @@ function GamePageInner() {
             lastMove={lastMove}
             deadStones={deadStones}
             territoryMap={territoryMap ?? undefined}
+            influenceMap={showInfluence && board.length ? estimateInfluence(board).heatmap : undefined}
             myTurn={status === 'scoring' ? true : myTurn}
             onPlace={status === 'scoring' ? (x, y) => handleToggleDead(x, y) : handlePlace}
             disabled={status === 'waiting' || status === 'finished'}
@@ -278,6 +280,35 @@ function GamePageInner() {
           {/* 操作按钮 */}
           {status === 'playing' && (
             <div className="space-y-2">
+              <button
+                onClick={() => setShowInfluence((v) => !v)}
+                className={`w-full py-2 rounded-lg text-white text-sm transition-colors ${
+                  showInfluence
+                    ? 'bg-purple-600 hover:bg-purple-500'
+                    : 'bg-purple-800 hover:bg-purple-700'
+                }`}
+              >
+                {showInfluence ? '关闭形势' : '形势判断'}
+              </button>
+              {showInfluence && board.length > 0 && (() => {
+                const inf = estimateInfluence(board);
+                return (
+                  <div className="text-xs space-y-1 text-gray-300 bg-gray-800 rounded-lg p-2">
+                    <div className="flex justify-between">
+                      <span>黑势</span><span>{inf.blackTerritory} 目</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>白势</span><span>{inf.whiteTerritory} 目</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-600 rounded overflow-hidden">
+                      <div
+                        className="h-full bg-gray-900"
+                        style={{ width: `${(inf.blackRatio * 100).toFixed(1)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
               <button
                 onClick={handlePass}
                 disabled={!myTurn}
