@@ -9,6 +9,7 @@ interface GoBoardProps {
     deadStones?: Point[]; // 数子阶段高亮死子
     territoryMap?: number[][]; // 领地标记
     influenceMap?: number[][]; // 影响力热力图（正=黑势 负=白势）
+    moveLabel?: { x: number; y: number; n: number } | null; // 复盘：在最后一手棋子上标注手数
     myTurn: boolean;
     onPlace: (x: number, y: number) => void;
     disabled?: boolean;
@@ -54,6 +55,7 @@ export default function GoBoard({
     deadStones = [],
     territoryMap,
     influenceMap,
+    moveLabel,
     myTurn,
     onPlace,
     disabled = false,
@@ -341,13 +343,27 @@ export default function GoBoard({
             const [lx, ly] = lastMove;
             const cx = toCanvasCoord(lx);
             const cy = toCanvasCoord(ly);
-            ctx.beginPath();
-            ctx.arc(cx, cy, STONE_R * 0.38, 0, Math.PI * 2);
-            ctx.fillStyle =
-                board[ly][lx] === 1
-                    ? 'rgba(255,255,255,0.8)'
-                    : 'rgba(0,0,0,0.6)';
-            ctx.fill();
+            const stoneColor = board[ly][lx];
+
+            if (moveLabel && moveLabel.x === lx && moveLabel.y === ly) {
+                // 复盘：在棋子上标注手数
+                ctx.save();
+                ctx.font = `bold ${STONE_R * 0.9}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle =
+                    stoneColor === 1 ? 'rgba(255,255,255,0.95)' : 'rgba(20,20,20,0.95)';
+                ctx.fillText(String(moveLabel.n), cx, cy);
+                ctx.restore();
+            } else {
+                ctx.beginPath();
+                ctx.arc(cx, cy, STONE_R * 0.38, 0, Math.PI * 2);
+                ctx.fillStyle =
+                    stoneColor === 1
+                        ? 'rgba(255,255,255,0.8)'
+                        : 'rgba(0,0,0,0.6)';
+                ctx.fill();
+            }
         }
 
         // 鼠标悬浮预览
@@ -379,6 +395,7 @@ export default function GoBoard({
         deadStones,
         territoryMap,
         influenceMap,
+        moveLabel,
         myTurn,
         disabled,
     ]);

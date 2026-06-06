@@ -31,6 +31,10 @@ interface GameStore {
   // 结果
   result: GameResult | null;
 
+  // 复盘
+  replayMode: boolean;
+  replayIndex: number;
+
   // Actions
   setCode: (code: string) => void;
   setMyColor: (color: 1 | 2) => void;
@@ -49,6 +53,9 @@ interface GameStore {
   setOpponentConfirmed: (v: boolean) => void;
   setUndoRequested: (v: boolean) => void;
   setResult: (r: GameResult | null) => void;
+  enterReplay: () => void;
+  exitReplay: () => void;
+  setReplayIndex: (i: number) => void;
   reset: () => void;
 }
 
@@ -70,6 +77,8 @@ const initialState = {
   opponentConfirmed: false,
   undoRequested: false,
   result: null as GameResult | null,
+  replayMode: false,
+  replayIndex: 0,
 };
 
 export const useGameStore = create<GameStore>((set) => ({
@@ -91,5 +100,9 @@ export const useGameStore = create<GameStore>((set) => ({
   setOpponentConfirmed: (opponentConfirmed) => set({ opponentConfirmed }),
   setUndoRequested: (undoRequested) => set({ undoRequested }),
   setResult: (result) => set({ result }),
+  enterReplay: () => set((s) => ({ replayMode: true, replayIndex: s.moves.length })),
+  exitReplay: () => set({ replayMode: false }),
+  setReplayIndex: (replayIndex) =>
+    set((s) => ({ replayIndex: Math.max(0, Math.min(replayIndex, s.moves.length)) })),
   reset: () => set(initialState),
 }));

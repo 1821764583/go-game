@@ -1,11 +1,12 @@
 'use client';
-import { useEffect, useRef, useState, useCallback, Suspense } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import GoBoard from '@/components/GoBoard';
 import MoveList from '@/components/MoveList';
+import ReplayControls, { formatMoveLabel } from '@/components/ReplayControls';
 import { useGameStore } from '@/store/game-store';
-import { Board, BoardSize, GameMove, Point, ScoreResult, GameResult, createEmptyBoard, estimateInfluence } from '@go-game/engine';
+import { Board, BoardSize, GameMove, Point, ScoreResult, GameResult, createEmptyBoard, estimateInfluence, buildReplaySnapshots } from '@go-game/engine';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
 
@@ -29,16 +30,19 @@ function GamePageInner() {
   const [serverError, setServerError] = useState('');
   const [showResult, setShowResult] = useState(false);
   const [showInfluence, setShowInfluence] = useState(false);
+  const [replayPlaying, setReplayPlaying] = useState(false);
 
   const {
     myColor, myNickname, opponentNickname, boardSize,
     status, board, currentTurn, moves, lastMove,
     deadStones, territoryMap, scorePreview,
     myConfirmed, opponentConfirmed, undoRequested, result,
+    replayMode, replayIndex,
     setCode, setMyColor, setMyNickname, setOpponentNickname, setBoardSize,
     setStatus, setBoard, setCurrentTurn, setMoves, setLastMove,
     setDeadStones, setTerritoryMap, setScorePreview,
     setMyConfirmed, setOpponentConfirmed, setUndoRequested, setResult,
+    enterReplay, exitReplay, setReplayIndex,
   } = useGameStore();
 
   // ── Socket 初始化 ────────────────────────────────────────────
@@ -211,6 +215,23 @@ function GamePageInner() {
   const handleConfirmScore = () => emit('confirm_score');
   const handleDisputeScore = () => emit('dispute_score');
 
+  // ── 复盘 ─────────────────────────────────────────────────────
+  const replaySnapshots = useMemo(
+    () => (replayMode ? buildReplaySnapshots(boardSize, moves) : null),
+    [replayMode, boardSize, moves],
+  );
+  const replaySnap = replaySnapshots?.[replayIndex] ?? null;
+  const currentReplayMove = replayMode && replayIndex > 0 ? moves[replayIndex - 1] : null;
+  const replayLabel = formatMoveLabel(currentReplayMove, boardSize);
+  const replayMoveLabel =
+    replaySnap?.lastMove && currentReplayMove
+      ? { x: replaySnap.lastMove[0], y: replaySnap.lastMove[1], n: replayIndex }
+      : null;
+
+  useEffect(() => {
+    if (replayPlaying && replayIndex >= moves.length) setReplayPlaying(false);
+  }, [replayPlaying, replayIndex, moves.length]);
+
   // ── UI 辅助 ──────────────────────────────────────────────────
   const myTurn = status === 'playing' && currentTurn === myColor;
   const colorLabel = myColor === 1 ? '●黑' : '○白';
@@ -242,9 +263,18 @@ function GamePageInner() {
           {status === 'waiting' && '等待对手加入...'}
           {status === 'playing' && (myTurn ? '轮到你落子' : '等待对手...')}
           {status === 'scoring' && '数子确认阶段'}
-          {status === 'finished' && '对局结束'}
+          {status === 'finished' && (replayMode ? '复盘回放中' : '对局结束')}
         </div>
-        <div className="text-sm text-gray-400">你是 {colorLabel}</div>
+        {status === 'finished' && replayMode ? (
+          <button
+            onClick={() => setShowResult(true)}
+            className="text-sm text-amber-400 hover:text-amber-300"
+          >
+            查看结果
+          </button>
+        ) : (
+          <div className="text-sm text-gray-400">你是 {colorLabel}</div>
+        )}
       </div>
 
       {/* 主内容区 */}
@@ -256,15 +286,16 @@ function GamePageInner() {
 
           {/* 棋盘 */}
           <GoBoard
-            board={board.length ? board : createEmptyBoard(boardSize)}
+            board={replaySnap ? replaySnap.board : board.length ? board : createEmptyBoard(boardSize)}
             boardSize={boardSize}
-            lastMove={lastMove}
-            deadStones={deadStones}
-            territoryMap={territoryMap ?? undefined}
-            influenceMap={showInfluence && board.length ? estimateInfluence(board).heatmap : undefined}
-            myTurn={status === 'scoring' ? true : myTurn}
+            lastMove={replaySnap ? replaySnap.lastMove : lastMove}
+            deadStones={replayMode ? [] : deadStones}
+            territoryMap={replayMode ? undefined : territoryMap ?? undefined}
+            influenceMap={!replayMode && showInfluence && board.length ? estimateInfluence(board).heatmap : undefined}
+            moveLabel={replayMode ? replayMoveLabel : undefined}
+            myTurn={replayMode ? false : status === 'scoring' ? true : myTurn}
             onPlace={status === 'scoring' ? (x, y) => handleToggleDead(x, y) : handlePlace}
-            disabled={status === 'waiting' || status === 'finished'}
+            disabled={replayMode || status === 'waiting' || status === 'finished'}
           />
 
           {/* 我的信息 */}
@@ -274,8 +305,52 @@ function GamePageInner() {
         {/* 右：手数记录 + 操作区 */}
         <div className="w-52 flex flex-col gap-4">
           <div className="h-80">
-            <MoveList moves={moves} myColor={myColor ?? 1} />
+            <MoveList
+              moves={moves}
+              myColor={myColor ?? 1}
+              currentIndex={replayMode ? replayIndex : undefined}
+              onSelect={replayMode ? setReplayIndex : undefined}
+            />
           </div>
+
+          {/* 复盘控制 */}
+          {replayMode && (
+            <ReplayControls
+              index={replayIndex}
+              total={moves.length}
+              label={replayLabel}
+              playing={replayPlaying}
+              onChange={(i) => { setReplayIndex(i); }}
+              onTogglePlay={() => setReplayPlaying((v) => !v)}
+              onExit={() => { setReplayPlaying(false); exitReplay(); }}
+            />
+          )}
+
+          {/* 对局结束、非复盘态：复盘入口 */}
+          {status === 'finished' && !replayMode && (
+            <div className="space-y-2">
+              {moves.length > 0 && (
+                <button
+                  onClick={enterReplay}
+                  className="w-full py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm transition-colors"
+                >
+                  复盘本局
+                </button>
+              )}
+              <button
+                onClick={() => setShowResult(true)}
+                className="w-full py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm transition-colors"
+              >
+                查看结果
+              </button>
+              <button
+                onClick={() => router.push('/')}
+                className="w-full py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm transition-colors"
+              >
+                返回首页
+              </button>
+            </div>
+          )}
 
           {/* 操作按钮 */}
           {status === 'playing' && (
@@ -432,10 +507,18 @@ function GamePageInner() {
             <div className="flex gap-3">
               <button
                 onClick={() => router.push('/')}
-                className="flex-1 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold"
+                className="flex-1 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-bold"
               >
                 返回首页
               </button>
+              {moves.length > 0 && (
+                <button
+                  onClick={() => { enterReplay(); setShowResult(false); }}
+                  className="flex-1 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold"
+                >
+                  复盘本局
+                </button>
+              )}
             </div>
           </div>
         </div>

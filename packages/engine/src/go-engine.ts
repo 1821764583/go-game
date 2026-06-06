@@ -2,7 +2,7 @@
 // go-engine.ts — 围棋落子规则引擎
 // ============================================================
 
-import { Board, Color, Point, PlaceResult, cloneBoard } from './types';
+import { Board, BoardSize, Color, GameMove, Point, PlaceResult, cloneBoard, createEmptyBoard } from './types';
 
 // 获取相邻四个交叉点
 export function getNeighbors(x: number, y: number, size: number): Point[] {
@@ -160,6 +160,36 @@ export function placeStone(
   const newKoPoint = computeNewKoPoint(newBoard, x, y, player, captured);
 
   return { success: true, newBoard, captured, newKoPoint };
+}
+
+// 复盘：按手数依次重放，返回每一步的棋盘快照
+// 返回数组长度为 moves.length + 1，索引 0 为空盘，索引 n 为下完第 n 手后的状态
+export interface ReplaySnapshot {
+  board: Board;
+  lastMove: Point | null;
+}
+
+export function buildReplaySnapshots(size: BoardSize, moves: GameMove[]): ReplaySnapshot[] {
+  let board = createEmptyBoard(size);
+  let koPoint: Point | null = null;
+  const snapshots: ReplaySnapshot[] = [{ board, lastMove: null }];
+
+  for (const m of moves) {
+    if ('pass' in m) {
+      koPoint = null;
+      snapshots.push({ board, lastMove: null });
+      continue;
+    }
+    const r = placeStone(board, m.x, m.y, m.player, koPoint);
+    if (r.success) {
+      board = r.newBoard;
+      koPoint = r.newKoPoint;
+      snapshots.push({ board, lastMove: [m.x, m.y] });
+    } else {
+      snapshots.push({ board, lastMove: null });
+    }
+  }
+  return snapshots;
 }
 
 // 验证落子是否合法（不改变棋盘，仅判断）
